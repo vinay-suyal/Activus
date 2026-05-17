@@ -20,6 +20,12 @@ public class TouchScript : MonoBehaviour
     [Header("Delay")]
     public float stayDuration = 3f;
 
+    [Header("Hover Trigger")]
+    [Tooltip("Assign the Box Collider trigger zone here")]
+    public Collider2D hoverTriggerZone;
+    [Tooltip("How long the glass must be held over the zone before auto-snap (seconds)")]
+    public float hoverHoldDuration = 0.5f;
+    // ---- Private state ----
     private Vector3 originalScale;
     private Vector3 originalPosition;
     private Quaternion originalRotation;
@@ -29,8 +35,15 @@ public class TouchScript : MonoBehaviour
     private bool returning = false;
     private bool snapping = false;
 
+    // Hover hold state
+    private bool isHoveringOverZone = false;
+    private float hoverTimer = 0f;
+    private bool hoverTriggered = false;   // true once the 0.5s fires — prevents re-trigger
+
     private Vector3 offset;
     private float zDepth;
+
+    // =========================================================================
 
     void Start()
     {
@@ -82,6 +95,7 @@ public class TouchScript : MonoBehaviour
         {
             HandleScale();
             HandleSnapFeedback();
+            HandleHoverZone();   // check hover hold while dragging
         }
         else if (returning)
         {
@@ -91,10 +105,19 @@ public class TouchScript : MonoBehaviour
 
     // ---- Mouse (Editor / PC) ----
     void OnMouseDown() { if (!snappedToMouth && !snapping) TryBeginDrag(ScreenToWorld(Input.mousePosition)); }
-    void OnMouseDrag() { if (!snappedToMouth && !snapping && isDragging) transform.position = ScreenToWorld(Input.mousePosition) + offset; }
+    void OnMouseDrag()
+    {
+        if (!snappedToMouth && !snapping && isDragging)
+        {
+            transform.position = ScreenToWorld(Input.mousePosition) + offset;
+        }
+    }
     void OnMouseUp() { if (!snappedToMouth && !snapping && isDragging) EndDrag(); }
 
-    // ---- Core ----
+    // =========================================================================
+    // Core drag
+    // =========================================================================
+
     private Vector3 ScreenToWorld(Vector3 screenPos)
     {
         screenPos.z = zDepth;
@@ -105,27 +128,83 @@ public class TouchScript : MonoBehaviour
     {
         isDragging = true;
         returning = false;
+        hoverTimer = 0f;
+        hoverTriggered = false;
         offset = transform.position - worldPos;
     }
 
     private void EndDrag()
     {
         isDragging = false;
+        isHoveringOverZone = false;
+        hoverTimer = 0f;
+
+        // If hover already triggered the snap, do nothing here
+        if (hoverTriggered) return;
 
         float distance = Vector3.Distance(transform.position, snapZone.position);
 
         if (distance <= snapDistance)
         {
-            GetComponent<Collider2D>().enabled = false;
-            transform.GetChild(1).GetComponent<Animation>().Play("MilkAnimFinal");
-            mouthTarget.parent.GetChild(0).GetComponent<Animation>().Play("GlowUpBody");
-
-            snapping = true;
+            TriggerSnap();
         }
         else
         {
             returning = true;
         }
+    }
+
+    // =========================================================================
+    // Hover hold zone
+    // =========================================================================
+
+    /// <summary>
+    /// Called every frame while the user is dragging.
+    /// Checks if the glass overlaps hoverTriggerZone and starts/stops the hold timer.
+    /// </summary>
+    private void HandleHoverZone()
+    {
+        if (hoverTriggered || hoverTriggerZone == null) return;
+
+        // Check overlap using the glass's own collider bounds vs the trigger zone
+        bool inside = hoverTriggerZone.OverlapPoint(transform.position);
+
+        if (inside)
+        {
+            if (!isHoveringOverZone)
+            {
+                isHoveringOverZone = true;
+                hoverTimer = 0f;
+            }
+
+            hoverTimer += Time.deltaTime;
+
+            if (hoverTimer >= hoverHoldDuration)
+            {
+                hoverTriggered = true;
+                isHoveringOverZone = false;
+                isDragging = false;   // take control from user
+                TriggerSnap();
+            }
+        }
+        else
+        {
+            // Left the zone — reset timer
+            isHoveringOverZone = false;
+            hoverTimer = 0f;
+        }
+    }
+
+    // =========================================================================
+    // Snap to mouth
+    // =========================================================================
+
+    private void TriggerSnap()
+    {
+        GetComponent<Collider2D>().enabled = false;
+        transform.GetChild(1).GetComponent<Animation>().Play("MilkAnimFinal");
+        mouthTarget.parent.GetChild(0).GetComponent<Animation>().Play("GlowUpBody");
+        snapping = true;
     }
 
     private void LerpToMouth()
@@ -148,14 +227,16 @@ public class TouchScript : MonoBehaviour
         }
     }
 
-    // ---- Feedback while inside snap zone ----
+    // =========================================================================
+    // Feedback while dragging
+    // =========================================================================
+
     private void HandleSnapFeedback()
     {
         float distance = Vector3.Distance(transform.position, snapZone.position);
 
         if (distance <= snapDistance)
         {
-            // Wobble rotation only — no size change
             float wobble = Mathf.Sin(Time.time * 10f) * 5f;
             transform.rotation = Quaternion.Lerp(
                 transform.rotation,
@@ -164,7 +245,6 @@ public class TouchScript : MonoBehaviour
         }
         else
         {
-            // Outside — reset rotation back to original
             transform.rotation = Quaternion.Lerp(
                 transform.rotation, originalRotation, Time.deltaTime * 10f);
         }
@@ -172,7 +252,6 @@ public class TouchScript : MonoBehaviour
 
     private void HandleScale()
     {
-        // Only shrink when outside snap zone
         float distance = Vector3.Distance(transform.position, snapZone.position);
         if (distance > snapDistance)
         {
@@ -185,16 +264,33 @@ public class TouchScript : MonoBehaviour
         }
     }
 
+    // =========================================================================
+    // After snap: wait, then fade out
+    // =========================================================================
+
     private IEnumerator ReturnAfterDelay()
     {
         yield return new WaitForSeconds(stayDuration);
 
         SceneManager.instance.ActivateParticleSystem();
 
+        dragLine.SetActive(false);
+        blueCircle.GetComponent<Animation>().Play("FadeBlueCircle");
+
+
+        // Hide the glass
+        gameObject.SetActive(false);
+
         snappedToMouth = false;
         returning = true;
         GetComponent<Collider2D>().enabled = false;
+
+        Invoke("SetOff", 0.6f);
     }
+
+    // =========================================================================
+    // Return to original position
+    // =========================================================================
 
     private void ReturnToOriginal()
     {
@@ -208,6 +304,20 @@ public class TouchScript : MonoBehaviour
             transform.localScale = originalScale;
             transform.rotation = originalRotation;
             returning = false;
+            GetComponent<Collider2D>().enabled = true;   // re-enable for next drag
+            hoverTriggered = false;                       // allow hover trigger again
         }
+    }
+
+    // =========================================================================
+    // Set Off
+    // =========================================================================
+
+
+    [SerializeField] GameObject dragLine;
+    [SerializeField] GameObject blueCircle;
+    private void SetOff()
+    {
+        
     }
 }

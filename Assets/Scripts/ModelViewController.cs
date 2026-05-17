@@ -18,14 +18,12 @@ public class ModelViewController : MonoBehaviour
     [Header("Intro Animation")]
     public float introDuration = 3.0f;
     public float introPitchAngle = 20f;
-    public float introSettleDuration = 0.8f;
     public float introFinalYaw = 0f;
     public float introFinalPitch = 0f;
     public AnimationCurve introEase = AnimationCurve.EaseInOut(0, 0, 1, 1);
 
     [Header("Orbit")]
     public float orbitSensitivity = 1f;
-    // smoothTime is now ONLY used for zoom and pivot pan — NOT for orbit rotation
     public float smoothTime = 0.10f;
     public float minVerticalAngle = -80f;
     public float maxVerticalAngle = 80f;
@@ -35,12 +33,12 @@ public class ModelViewController : MonoBehaviour
     public float inertiaDamping = 4f;
     [Tooltip("Minimum speed (deg/s) before inertia is considered stopped.")]
     public float inertiaMinSpeed = 0.5f;
-    [Tooltip("Multiplier applied to the captured swipe velocity when inertia starts. Tune feel here.")]
+    [Tooltip("Multiplier applied to the captured swipe velocity when inertia starts.")]
     public float inertiaVelocityScale = 1.0f;
-    [Tooltip("Max number of frames averaged to calculate release velocity. Higher = smoother but lazier.")]
+    [Tooltip("Max number of frames averaged to calculate release velocity.")]
     [Range(1, 10)]
     public int inertiaVelocitySampleFrames = 4;
-    [Tooltip("Release velocity (deg/s) that must be exceeded to trigger inertia. Below this threshold the model stops instantly on release.")]
+    [Tooltip("Release velocity (deg/s) that must be exceeded to trigger inertia.")]
     public float inertiaActivationThreshold = 80f;
 
     [Header("Zoom")]
@@ -53,6 +51,7 @@ public class ModelViewController : MonoBehaviour
     public float panSensitivity = 0.005f;
 
     [Header("Auto Rotate")]
+    // Leave autoRotate = false in the Inspector — the script enables it after the intro.
     public bool autoRotate = false;
     public float autoRotateSpeed = 20f;
     public float autoRotateResumeDelay = 2f;
@@ -82,7 +81,6 @@ public class ModelViewController : MonoBehaviour
     private Vector3 _currentPivot, _targetPivot;
     private Vector3 _pivotVel;
 
-    // Orbit smooth damp vels — kept but only used for non-inertia smoothing (intro settle etc.)
     private float _yawVel, _pitchVel;
 
     // Inertia state
@@ -93,7 +91,6 @@ public class ModelViewController : MonoBehaviour
     // Rolling average velocity buffer
     private Vector2[] _velocitySamples;
     private int _velocitySampleIndex = 0;
-    private bool _wasOrbitingLastFrame = false;
 
     private Vector2 _prevMousePos;
     private bool _mouseOrbitActive;
@@ -105,8 +102,12 @@ public class ModelViewController : MonoBehaviour
     private bool _touchInitialised;
 
     private float _lastInteractionTime;
+
+    // Intro / settle state
     private bool _introPlaying = true;
+
     private bool isUiActive = false;
+    private bool _userHasInteracted = false;    // permanently stops auto-rotate on first touch
 
     private float _defaultDist;
     private Vector3 _defaultPivot;
@@ -167,7 +168,8 @@ public class ModelViewController : MonoBehaviour
 
     void Update()
     {
-        if (_introPlaying || isUiActive) return;
+        if (_introPlaying) return;
+        if (isUiActive) return;
 
         HandleMouse();
         HandleTouch();
@@ -305,38 +307,80 @@ public class ModelViewController : MonoBehaviour
     {
         _introPlaying = true;
 
-        float startYaw = _currentYaw;
-        float endYaw = startYaw + 360f;
+        // --- Phase 1: zoom-in from far + slow top-down tilt (0% – 50%) ---
+        // Camera starts far away and high up, then swoops down to the default
+        // distance while pitching from a bird's-eye view down to eye level.
+
+        float phase1Duration = introDuration * 0.5f;
+        float startDist = _defaultDist * 2.5f;   // start far away
+        float startPitch = 60f;                    // start high/top-down
+        float startYaw = introFinalYaw - 40f;    // slightly off to the side
         float elapsed = 0f;
 
-        while (elapsed < introDuration)
+        _currentDist = startDist;
+        _currentPitch = startPitch;
+        _currentYaw = startYaw;
+
+        while (elapsed < phase1Duration)
         {
             elapsed += Mathf.Min(Time.deltaTime, 0.05f);
-            float t = Mathf.Clamp01(elapsed / introDuration);
+            float t = Mathf.Clamp01(elapsed / phase1Duration);
             float te = introEase.Evaluate(t);
 
-            _currentYaw = Mathf.Lerp(startYaw, endYaw, te);
+            _currentDist = Mathf.Lerp(startDist, _defaultDist, te);
+            _currentPitch = Mathf.Lerp(startPitch, introFinalPitch, te);
+            _currentYaw = Mathf.Lerp(startYaw, introFinalYaw, te);
+
             ApplyTransformImmediate();
             yield return null;
         }
 
-        _targetYaw = introFinalYaw;
-        _targetPitch = introFinalPitch;
+        // --- Phase 2: settle at final pose + smoothly hand off to auto-rotate (50% – 100%) ---
+        // Snap to exact final values, then let auto-rotate drive yaw forward
+        // for the second half so the transition into idle spin is invisible.
+
+        float phase2Duration = introDuration * 0.5f;
+        elapsed = 0f;
+
         _currentYaw = introFinalYaw;
         _currentPitch = introFinalPitch;
+        _currentDist = _defaultDist;
+        _targetYaw = introFinalYaw;
+        _targetPitch = introFinalPitch;
+        _targetDist = _defaultDist;
+
+        // Enable auto-rotate now so it drives yaw during phase 2
+        _userHasInteracted = false;
+        autoRotate = true;
+        _lastInteractionTime = float.NegativeInfinity;
+
+        while (elapsed < phase2Duration)
+        {
+            elapsed += Mathf.Min(Time.deltaTime, 0.05f);
+
+            // Auto-rotate increments _targetYaw each frame via HandleAutoRotate,
+            // but during intro we drive it directly here instead.
+            _targetYaw -= autoRotateSpeed * Time.deltaTime;
+            _currentYaw = _targetYaw;
+
+            ApplyTransformImmediate();
+            yield return null;
+        }
+
+        // --- Hand off to normal Update loop ---
+        // _targetYaw is already in motion; the normal HandleAutoRotate will
+        // continue incrementing it seamlessly from this exact value.
         _introPlaying = false;
     }
+
+
 
     // =========================================================================
     // Inertia helpers
     // =========================================================================
 
-    /// <summary>
-    /// Record the per-frame delta (deg/s) into the rolling average buffer.
-    /// </summary>
     void RecordOrbitVelocity(Vector2 deltaDegs)
     {
-        // Reinitialise buffer size if inspector value changed at runtime
         if (_velocitySamples == null || _velocitySamples.Length != inertiaVelocitySampleFrames)
             _velocitySamples = new Vector2[inertiaVelocitySampleFrames];
 
@@ -344,9 +388,6 @@ public class ModelViewController : MonoBehaviour
         _velocitySampleIndex++;
     }
 
-    /// <summary>
-    /// Average all buffered samples to get a stable release velocity.
-    /// </summary>
     Vector2 GetAverageVelocity()
     {
         if (_velocitySamples == null) return Vector2.zero;
@@ -363,18 +404,13 @@ public class ModelViewController : MonoBehaviour
         _velocitySampleIndex = 0;
     }
 
-    /// <summary>
-    /// Called when the user lifts their finger/mouse — kicks off inertia.
-    /// </summary>
     void StartInertia()
     {
         Vector2 avgVel = GetAverageVelocity() * inertiaVelocityScale;
         _inertiaYawVel = avgVel.x;
-        _inertiaPitchVel = -avgVel.y;   // y delta is inverted during orbit input
+        _inertiaPitchVel = -avgVel.y;
 
         float speed = Mathf.Abs(_inertiaYawVel) + Mathf.Abs(_inertiaPitchVel);
-
-        // Only activate inertia for fast swipes. Slow/normal drags stop dead on release.
         _inertiaActive = speed > inertiaActivationThreshold;
 
         if (!_inertiaActive)
@@ -397,18 +433,15 @@ public class ModelViewController : MonoBehaviour
     {
         if (!_inertiaActive) return;
 
-        // Apply current inertia velocity directly to the TARGET angles (no smoothdamp)
         _targetYaw += _inertiaYawVel * Time.deltaTime;
         _targetPitch += _inertiaPitchVel * Time.deltaTime;
         _targetPitch = Mathf.Clamp(_targetPitch, minVerticalAngle, maxVerticalAngle);
         ClampTargetDist();
 
-        // Exponential damping — smooth deceleration, tunable via inertiaDamping
         float decay = Mathf.Exp(-inertiaDamping * Time.deltaTime);
         _inertiaYawVel *= decay;
         _inertiaPitchVel *= decay;
 
-        // Stop once speed is negligible
         if (Mathf.Abs(_inertiaYawVel) + Mathf.Abs(_inertiaPitchVel) < inertiaMinSpeed)
             StopInertia();
     }
@@ -430,21 +463,20 @@ public class ModelViewController : MonoBehaviour
         {
             _prevMousePos = mousePos;
             _mouseOrbitActive = true;
-            StopInertia();          // cancel any running inertia when user grabs again
+            StopInertia();
             ClearVelocityBuffer();
         }
 
         if (mouse.leftButton.wasReleasedThisFrame)
         {
             _mouseOrbitActive = false;
-            StartInertia();         // launch inertia on release
+            StartInertia();
         }
 
         if (_mouseOrbitActive && mouse.leftButton.isPressed)
         {
             Vector2 delta = mousePos - _prevMousePos;
 
-            // ── KEY CHANGE: apply directly to _current* (instant, no smoothdamp lag) ──
             float dYaw = delta.x * FinalOrbitSens;
             float dPitch = -delta.y * FinalOrbitSens;
 
@@ -452,12 +484,11 @@ public class ModelViewController : MonoBehaviour
             _currentPitch += dPitch;
             _currentPitch = Mathf.Clamp(_currentPitch, minVerticalAngle, maxVerticalAngle);
 
-            // Keep target in sync so there is no "snap" when dragging stops
             _targetYaw = _currentYaw;
             _targetPitch = _currentPitch;
 
             ClampTargetDist();
-            RecordOrbitVelocity(new Vector2(dYaw, -dPitch));  // store for inertia
+            RecordOrbitVelocity(new Vector2(dYaw, -dPitch));
             Interact();
         }
 
@@ -519,7 +550,7 @@ public class ModelViewController : MonoBehaviour
         {
             if (_touchInitialised)
             {
-                StartInertia();     // finger lifted — launch inertia
+                StartInertia();
                 Interact();
             }
             _touchInitialised = false;
@@ -547,7 +578,6 @@ public class ModelViewController : MonoBehaviour
             {
                 Vector2 delta = t.screenPosition - _lastSinglePos;
 
-                // ── KEY CHANGE: instant apply, same pattern as mouse orbit ──
                 float dYaw = delta.x * FinalOrbitSens * 0.3f;
                 float dPitch = -delta.y * FinalOrbitSens * 0.3f;
 
@@ -570,7 +600,6 @@ public class ModelViewController : MonoBehaviour
 
         else if (touches.Count == 2)
         {
-            // Starting a two-finger gesture cancels any pending inertia
             if (!_pinchActive) StopInertia();
             _pinchActive = true;
 
@@ -629,8 +658,10 @@ public class ModelViewController : MonoBehaviour
     void HandleAutoRotate()
     {
         if (!autoRotate) return;
-        if (Time.time - _lastInteractionTime < autoRotateResumeDelay) return;
-        _targetYaw += autoRotateSpeed * Time.deltaTime;
+        // Only auto-rotate when the user hasn't interacted yet, OR after the
+        // resume delay has elapsed following an interaction.
+        if (_userHasInteracted && Time.time - _lastInteractionTime < autoRotateResumeDelay) return;
+        _targetYaw -= autoRotateSpeed * Time.deltaTime;
     }
 
     // =========================================================================
@@ -639,16 +670,15 @@ public class ModelViewController : MonoBehaviour
 
     void ApplySmoothedTransform()
     {
-        // Yaw and Pitch are now set directly during orbit — SmoothDamp is
-        // intentionally NOT used for them. We still smooth dist and pivot.
         _currentDist = Mathf.SmoothDamp(
             _currentDist, _targetDist, ref _distVel, zoomSmoothTime);
 
         _currentPivot = Vector3.SmoothDamp(
             _currentPivot, _targetPivot, ref _pivotVel, smoothTime);
 
-        // During inertia the target angles drift — keep current in sync instantly
-        if (_inertiaActive)
+        // During inertia or auto-rotate, target angles change every frame —
+        // sync current instantly so the camera actually follows.
+        if (_inertiaActive || autoRotate)
         {
             _currentYaw = _targetYaw;
             _currentPitch = _targetPitch;
@@ -688,7 +718,11 @@ public class ModelViewController : MonoBehaviour
         _currentPitch = introFinalPitch;
         _targetDist = _defaultDist;
         _targetPivot = _defaultPivot;
-        Interact();
+
+        // Re-enable auto-rotate after a reset
+        _userHasInteracted = false;
+        autoRotate = true;
+        _lastInteractionTime = float.NegativeInfinity;
     }
 
     public void ChangeSensitivity()
@@ -705,5 +739,18 @@ public class ModelViewController : MonoBehaviour
         ChangeSensitivityBtn.SetActive(true);
     }
 
-    void Interact() => _lastInteractionTime = Time.time;
+    // =========================================================================
+    // Interaction tracking
+    // =========================================================================
+
+    void Interact()
+    {
+        _lastInteractionTime = Time.time;
+
+        if (!_userHasInteracted)
+        {
+            _userHasInteracted = true;
+            autoRotate = false;   // permanently stop auto-rotate on first interaction
+        }
+    }
 }

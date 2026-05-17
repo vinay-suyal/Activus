@@ -50,7 +50,9 @@ public class SceneManager : MonoBehaviour
     public void NextBtnClicked()
     {
         StartCoroutine(NextBtn());
-        PlaySceneTransitionAnimation();
+        
+        if(i==0)
+            PlaySceneTransitionAnimation();
     }
 
     public void ReloadSceneAfterTime()

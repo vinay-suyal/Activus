@@ -14,7 +14,7 @@ public class Scene : MonoBehaviour
 
     public void ChangeSceneIn(float sec)
     {
-        nxtBtn.SetActive(true);
+        //nxtBtn.SetActive(true);
         StartCoroutine(Timer(sec));
     }
 
@@ -28,7 +28,7 @@ public class Scene : MonoBehaviour
             if(tt <= 5 && !btnActivated)
             {
                 btnActivated = true;
-                nxtBtn.SetActive(true);
+                //nxtBtn.SetActive(true);
             }
 
             yield return null;

@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
+using UnityEngine.EventSystems;
 
 public class SceneManager : MonoBehaviour
 {
@@ -32,6 +33,7 @@ public class SceneManager : MonoBehaviour
             allScenes[i].SetActive(false);
         }
 
+        print("total scenes " + totalScenes);
         totalScenes = allScenes.Count;
 
         PlayFirstScene();
@@ -43,7 +45,7 @@ public class SceneManager : MonoBehaviour
     {
         i = 0;
         allScenes[0].SetActive(true);
-        allScenes[0].GetComponent<Scene>().ChangeSceneIn(13);
+        allScenes[0].GetComponent<Scene>().ChangeSceneIn(10);
     }
 
 
@@ -57,83 +59,72 @@ public class SceneManager : MonoBehaviour
 
     public void ReloadSceneAfterTime()
     {
-        Invoke("LoadNewScene" , 15);
+        //Invoke("LoadNewScene" , 3);
     }
 
     public Canvas bg_canvas;
 
     public void LoadNewScene()
     {
-        UnityEngine.SceneManagement.SceneManager.LoadScene(0);
+        //UnityEngine.SceneManagement.SceneManager.LoadScene(0);
     }
 
     IEnumerator NextBtn()
     {
-        HideHuman();
+        print("i = " + i + " ");
+        //HideHuman();
         allScenes[i].SetActive(false);
-        yield return new WaitForSeconds(0.5f);
 
-        if (i == totalScenes - 1)
+        if(i==0)
+            yield return new WaitForSeconds(0.5f);
+        else
+            yield return new WaitForSeconds(0f);
+
+        if (i == totalScenes-1)
         {
+            print("Reloading new scene");
             UnityEngine.SceneManagement.SceneManager.LoadScene(0);
             yield break;
         }
 
         i += 1;
-        if (i == 1)
-        {
-            ActiveBgCanvas();
+        allScenes[i].SetActive(true);
+       
 
-            ActivateSecondScene();
-        }
-        else
+        if(i==1)    // scene 2
         {
-            DeActivateSecondScene();
+            bgVideo.SetActive(true);
+            ActivateBgScene2();
+            ShowHuman();
+            Glass.SetActive(true);
+            BlueCircle.SetActive(true);
         }
-
-        
-        if (i == 5)
+        else if(i==2)   // scene 3
         {
-            //DeActiveBgCanvas();
-            DeActivateParticleSystem();
+            ActivateBgScene3();
+            Glass.SetActive(false);
+            BlueCircle.SetActive(false);
+            allScenes[i].GetComponent<Scene>().ChangeSceneIn(10);
         }
-        else if (i == 7)
+        else if (i == 3)   //scene 4
         {
+            ActivateBgScene4();
+        }
+        else if(i==4)   //scene 5
+        {
+            ActivateBgScene5();
+            allScenes[i].GetComponent<Scene>().ChangeSceneIn(15);
+        }
+        else if (i==5)
+        {
+            DeactivateScene5();
             HideHuman();
         }
-
-        allScenes[i].SetActive(true);
-
-        if (i == 2)
+        else if(i==6)
         {
-            allScenes[2].GetComponent<Scene>().ChangeSceneIn(12);
-        }
-
-        if(i==4)
-        {
-            allScenes[4].GetComponent<Scene>().ChangeSceneIn(13);
-        }
-
-        
-        if (i > 0 && i < 5)
-            ShowHuman();
-
-        if (i == 6)
-        {
+            print("he;llo");
             activus.SetActive(false);
-            Camera.main.GetComponent<ModelViewController>().enabled = true;
-            //allScenes[6].GetComponent<Scene>().ChangeSceneIn(30);
-        }
-        else
-        {
-            activus.SetActive(false);
-            Camera.main.GetComponent<ModelViewController>().enabled = false;
-
-            // Reset camera position
-            Camera.main.transform.position = new Vector3(0, 0, -5);
-
-            // Reset camera rotation
-            Camera.main.transform.rotation = Quaternion.Euler(0, 0, 0);
+            allScenes[i].GetComponent<Scene>().ChangeSceneIn(40);
         }
 
     }
@@ -147,7 +138,7 @@ public class SceneManager : MonoBehaviour
 
     void DeActiveBgCanvas()
     {
-        bg_canvas.gameObject.SetActive(false);
+        //bg_canvas.gameObject.SetActive(false);
     }
 
     #region Human_Body
@@ -174,7 +165,7 @@ public class SceneManager : MonoBehaviour
     public void ActivateParticleSystem()
     {
         bubble.gameObject.SetActive(true);
-        allScenes[1].GetComponent<Scene>().ChangeSceneIn(10);
+        allScenes[1].GetComponent<Scene>().ChangeSceneIn(3);
     }
 
     void DeActivateParticleSystem()
@@ -190,6 +181,9 @@ public class SceneManager : MonoBehaviour
         ParticleSystem.MinMaxCurve rate = emission.rateOverTime;
         rate.constant *= 3f;
         emission.rateOverTime = rate;
+
+        var main = bubble.main;
+        main.simulationSpeed = 1.2f;
 
         bubble.Play();
     }
@@ -226,17 +220,40 @@ public class SceneManager : MonoBehaviour
     public TextMeshProUGUI text2;
     public GameObject activus_img;
     public GameObject btn;
+    public ParticleSystem explosion;
 
     public void PlayRedClothAnim()
     {
         //redCloth.GetComponent<Animation>().Play("Red_Cloth_Anim");
         redCloth.GetComponent<Animation>().Play("RedCloth2");
+        clothEvent.enabled = false;
         //activus_img.transform.GetComponent<Animation>().Play("Activus");
         Invoke("HideRedCloth", 0.5f);
         text1.gameObject.SetActive(false);
         text2.gameObject.SetActive(false);
         activus.SetActive(true);
         Camera.main.GetComponent<ModelViewController>().enabled = true;
+
+        explosion.gameObject.SetActive(true);
+        explosion.Play();
+    }
+
+    public TextMeshProUGUI tap;
+    public GameObject hand;
+    public EventTrigger clothEvent;
+
+    public void ActivateClick()
+    {
+        tap.gameObject.SetActive(true);
+        hand.gameObject.SetActive(true);
+        clothEvent.enabled = true;
+    }
+
+    public void DeActivateClick()
+    {
+        tap.gameObject.SetActive(false);
+        hand.gameObject.SetActive(false);
+        clothEvent.enabled = false;
     }
 
     void HideRedCloth()
@@ -256,18 +273,60 @@ public class SceneManager : MonoBehaviour
 
     void ActivateSecondScene()
     {
-        HumanBody.SetActive(true);
+        //HumanBody.SetActive(true);
         Glass.SetActive(true);
         BlueCircle.SetActive(true);
     }
 
     void DeActivateSecondScene()
     {
-        HumanBody.SetActive(false);
+        //HumanBody.SetActive(false);
         Glass.SetActive(false);
         BlueCircle.SetActive(false);
     }
 
+
+    #endregion
+
+
+
+    #region Bg Canvas
+
+    [SerializeField] GameObject scene2;
+    [SerializeField] GameObject scene3;
+    [SerializeField] GameObject scene4;
+    [SerializeField] GameObject scene5;
+    
+    [SerializeField] GameObject bgVideo;
+
+
+    void ActivateBgScene2()
+    {
+        scene2.SetActive(true);
+    }
+
+    void ActivateBgScene3()
+    {
+        scene2.SetActive(false);
+        scene3.SetActive(true);
+    }
+
+    void ActivateBgScene4()
+    {
+        scene3.SetActive(false);
+        scene4.SetActive(true);
+    }
+
+    void ActivateBgScene5()
+    {
+        scene4.SetActive(false);
+        scene5.SetActive(true);
+    }
+
+    void DeactivateScene5()
+    {
+        scene5.SetActive(false);
+    }
 
     #endregion
 }

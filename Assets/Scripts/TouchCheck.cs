@@ -1,11 +1,11 @@
-using UnityEngine;
+ï»¿using UnityEngine;
 using System.Collections;
 
 public class TouchScript : MonoBehaviour
 {
     [Header("References")]
-    public Transform snapZone;        // Point 1 — radius check only
-    public Transform mouthTarget;     // Point 2 — final destination
+    public Transform snapZone;        // Point 1 â€” radius check only
+    public Transform mouthTarget;     // Point 2 â€” final destination
 
     [Header("Scale Settings")]
     public float minScale = 0.4f;
@@ -25,6 +25,11 @@ public class TouchScript : MonoBehaviour
     public Collider2D hoverTriggerZone;
     [Tooltip("How long the glass must be held over the zone before auto-snap (seconds)")]
     public float hoverHoldDuration = 0.5f;
+
+    [Header("Intro Animation")]
+    [Tooltip("Match this to the duration of your 0 to 1 scale animation")]
+    public float introAnimDuration = 1f;
+
     // ---- Private state ----
     private Vector3 originalScale;
     private Vector3 originalPosition;
@@ -34,31 +39,64 @@ public class TouchScript : MonoBehaviour
     private bool snappedToMouth = false;
     private bool returning = false;
     private bool snapping = false;
+    private bool introComplete = false;   // blocks drag until intro anim finishes
 
     // Hover hold state
     private bool isHoveringOverZone = false;
     private float hoverTimer = 0f;
-    private bool hoverTriggered = false;   // true once the 0.5s fires — prevents re-trigger
+    private bool hoverTriggered = false;
 
     private Vector3 offset;
     private float zDepth;
+    private Animation _animation;
+
+    [SerializeField] GameObject dragLine;
+    [SerializeField] GameObject blueCircle;
 
     // =========================================================================
 
     void Start()
     {
-        originalScale = transform.localScale;
         originalPosition = transform.position;
         originalRotation = transform.rotation;
+        // originalScale captured AFTER intro anim finishes â€” see WaitForIntroAnim
 
         zDepth = Camera.main.WorldToScreenPoint(transform.position).z;
 
         if (GetComponent<Collider2D>() == null)
             gameObject.AddComponent<BoxCollider2D>();
+
+        _animation = GetComponent<Animation>();
+
+        StartCoroutine(WaitForIntroAnim());
+    }
+
+    /// <summary>
+    /// Waits for the 0->1 intro scale animation to finish, then snapshots
+    /// the correct originalScale and unlocks dragging.
+    /// </summary>
+    private IEnumerator WaitForIntroAnim()
+    {
+        introComplete = false;
+        yield return new WaitForSeconds(introAnimDuration);
+        originalScale = transform.localScale;   // captured at scale 1, not scale 0
+        introComplete = true;
+    }
+
+    /// <summary>
+    /// Alternative: call this from an Animation Event at the last frame of
+    /// the intro clip instead of relying on the timer above.
+    /// </summary>
+    public void OnIntroAnimComplete()
+    {
+        StopAllCoroutines();
+        originalScale = transform.localScale;
+        introComplete = true;
     }
 
     void Update()
     {
+        if (!introComplete) return;   // wait until scale anim is done
         if (snappedToMouth) return;
 
         if (snapping)
@@ -95,7 +133,7 @@ public class TouchScript : MonoBehaviour
         {
             HandleScale();
             HandleSnapFeedback();
-            HandleHoverZone();   // check hover hold while dragging
+            HandleHoverZone();
         }
         else if (returning)
         {
@@ -104,15 +142,13 @@ public class TouchScript : MonoBehaviour
     }
 
     // ---- Mouse (Editor / PC) ----
-    void OnMouseDown() { if (!snappedToMouth && !snapping) TryBeginDrag(ScreenToWorld(Input.mousePosition)); }
+    void OnMouseDown() { if (introComplete && !snappedToMouth && !snapping) TryBeginDrag(ScreenToWorld(Input.mousePosition)); }
     void OnMouseDrag()
     {
-        if (!snappedToMouth && !snapping && isDragging)
-        {
+        if (introComplete && !snappedToMouth && !snapping && isDragging)
             transform.position = ScreenToWorld(Input.mousePosition) + offset;
-        }
     }
-    void OnMouseUp() { if (!snappedToMouth && !snapping && isDragging) EndDrag(); }
+    void OnMouseUp() { if (introComplete && !snappedToMouth && !snapping && isDragging) EndDrag(); }
 
     // =========================================================================
     // Core drag
@@ -131,6 +167,9 @@ public class TouchScript : MonoBehaviour
         hoverTimer = 0f;
         hoverTriggered = false;
         offset = transform.position - worldPos;
+
+        // Stop legacy Animation overriding localScale during drag
+        if (_animation != null) _animation.enabled = false;
     }
 
     private void EndDrag()
@@ -139,7 +178,6 @@ public class TouchScript : MonoBehaviour
         isHoveringOverZone = false;
         hoverTimer = 0f;
 
-        // If hover already triggered the snap, do nothing here
         if (hoverTriggered) return;
 
         float distance = Vector3.Distance(transform.position, snapZone.position);
@@ -150,6 +188,8 @@ public class TouchScript : MonoBehaviour
         }
         else
         {
+            // Re-enable legacy Animation
+            if (_animation != null) _animation.enabled = true;
             returning = true;
         }
     }
@@ -158,15 +198,10 @@ public class TouchScript : MonoBehaviour
     // Hover hold zone
     // =========================================================================
 
-    /// <summary>
-    /// Called every frame while the user is dragging.
-    /// Checks if the glass overlaps hoverTriggerZone and starts/stops the hold timer.
-    /// </summary>
     private void HandleHoverZone()
     {
         if (hoverTriggered || hoverTriggerZone == null) return;
 
-        // Check overlap using the glass's own collider bounds vs the trigger zone
         bool inside = hoverTriggerZone.OverlapPoint(transform.position);
 
         if (inside)
@@ -183,13 +218,12 @@ public class TouchScript : MonoBehaviour
             {
                 hoverTriggered = true;
                 isHoveringOverZone = false;
-                isDragging = false;   // take control from user
+                isDragging = false;
                 TriggerSnap();
             }
         }
         else
         {
-            // Left the zone — reset timer
             isHoveringOverZone = false;
             hoverTimer = 0f;
         }
@@ -203,7 +237,11 @@ public class TouchScript : MonoBehaviour
     {
         GetComponent<Collider2D>().enabled = false;
         transform.GetChild(1).GetComponent<Animation>().Play("MilkAnimFinal");
+        
+        
         mouthTarget.parent.GetChild(0).GetComponent<Animation>().Play("GlowUpBody");
+        
+        
         snapping = true;
     }
 
@@ -265,7 +303,7 @@ public class TouchScript : MonoBehaviour
     }
 
     // =========================================================================
-    // After snap: wait, then fade out
+    // After snap: wait, then set off
     // =========================================================================
 
     private IEnumerator ReturnAfterDelay()
@@ -277,15 +315,13 @@ public class TouchScript : MonoBehaviour
         dragLine.SetActive(false);
         blueCircle.GetComponent<Animation>().Play("FadeBlueCircle");
 
+        SetOff();
 
-        // Hide the glass
         gameObject.SetActive(false);
 
         snappedToMouth = false;
         returning = true;
         GetComponent<Collider2D>().enabled = false;
-
-        Invoke("SetOff", 0.6f);
     }
 
     // =========================================================================
@@ -304,8 +340,9 @@ public class TouchScript : MonoBehaviour
             transform.localScale = originalScale;
             transform.rotation = originalRotation;
             returning = false;
-            GetComponent<Collider2D>().enabled = true;   // re-enable for next drag
-            hoverTriggered = false;                       // allow hover trigger again
+            GetComponent<Collider2D>().enabled = true;
+            hoverTriggered = false;
+            if (_animation != null) _animation.enabled = true;
         }
     }
 
@@ -313,11 +350,8 @@ public class TouchScript : MonoBehaviour
     // Set Off
     // =========================================================================
 
-
-    [SerializeField] GameObject dragLine;
-    [SerializeField] GameObject blueCircle;
     private void SetOff()
     {
-        
+        // Fill in logic here
     }
 }

@@ -50,6 +50,7 @@ public class AnimationPlayScript : MonoBehaviour
     {
         yield return new WaitForSeconds(delay);
 
+        SFXManager.instance.Play(SFXType.PowerUp);
         obj.transform.GetChild(0).GetComponent<Animation>().Play("HighlightBubble");
     }
 

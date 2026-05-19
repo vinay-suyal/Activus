@@ -162,6 +162,8 @@ public class TouchScript : MonoBehaviour
 
     private void TryBeginDrag(Vector3 worldPos)
     {
+        Vibration.instance.Vibrate(5);
+        SFXManager.instance.Play(SFXType.Glass);
         isDragging = true;
         returning = false;
         hoverTimer = 0f;
@@ -235,14 +237,26 @@ public class TouchScript : MonoBehaviour
 
     private void TriggerSnap()
     {
+        //Vibration.instance.Vibrate(100);
         GetComponent<Collider2D>().enabled = false;
+        //SceneManager.instance.DeActivateSecondScene();
+
+        DragAndDrop.GetComponent<Animation>().Play("Drag&Drop2");
+        blueCircle.GetComponent<Animation>().Play("FadeBlueCircle");
+
         transform.GetChild(1).GetComponent<Animation>().Play("MilkAnimFinal");
-        
-        
+
+        Invoke("PlayDrinkingSound", 0.5f);
         mouthTarget.parent.GetChild(0).GetComponent<Animation>().Play("GlowUpBody");
         
         
         snapping = true;
+    }
+
+    void PlayDrinkingSound()
+    {
+        Vibration.instance.Vibrate(200);
+        SFXManager.instance.Play(SFXType.Drinking);
     }
 
     private void LerpToMouth()
@@ -261,8 +275,11 @@ public class TouchScript : MonoBehaviour
             transform.rotation = targetRot;
             snapping = false;
             snappedToMouth = true;
+            
             StartCoroutine(ReturnAfterDelay());
         }
+
+
     }
 
     // =========================================================================
@@ -306,14 +323,16 @@ public class TouchScript : MonoBehaviour
     // After snap: wait, then set off
     // =========================================================================
 
+    [SerializeField] GameObject DragAndDrop;
     private IEnumerator ReturnAfterDelay()
     {
+        
         yield return new WaitForSeconds(stayDuration);
 
         SceneManager.instance.ActivateParticleSystem();
 
         dragLine.SetActive(false);
-        blueCircle.GetComponent<Animation>().Play("FadeBlueCircle");
+
 
         SetOff();
 

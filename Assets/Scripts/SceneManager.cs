@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
+using UnityEngine.Video;
 
 public class SceneManager : MonoBehaviour
 {
@@ -12,11 +13,15 @@ public class SceneManager : MonoBehaviour
 
     #region Singleton
 
+    [SerializeField] VideoPlayer vp1;
+    [SerializeField] VideoPlayer vp2;
     public static SceneManager instance;
 
     private void Awake()
     {
         instance = this;
+        vp1.Prepare();
+        vp2.Prepare();
     }
 
     #endregion
@@ -48,6 +53,11 @@ public class SceneManager : MonoBehaviour
         allScenes[0].GetComponent<Scene>().ChangeSceneIn(10);
     }
 
+    public void RestartBtnClicked()
+    {
+        UnityEngine.SceneManagement.SceneManager.LoadScene(0);
+    }
+
 
     public void NextBtnClicked()
     {
@@ -69,6 +79,8 @@ public class SceneManager : MonoBehaviour
         //UnityEngine.SceneManagement.SceneManager.LoadScene(0);
     }
 
+    public GameObject RestartBtn;
+
     IEnumerator NextBtn()
     {
         print("i = " + i + " ");
@@ -82,8 +94,8 @@ public class SceneManager : MonoBehaviour
 
         if (i == totalScenes-1)
         {
-            print("Reloading new scene");
-            UnityEngine.SceneManagement.SceneManager.LoadScene(0);
+            RestartBtn.SetActive(true);
+            
             yield break;
         }
 
@@ -93,6 +105,7 @@ public class SceneManager : MonoBehaviour
 
         if(i==1)    // scene 2
         {
+            SFXManager.instance.Play(SFXType.Sliding);
             bgVideo.SetActive(true);
             ActivateBgScene2();
             ShowHuman();
@@ -108,6 +121,7 @@ public class SceneManager : MonoBehaviour
         }
         else if (i == 3)   //scene 4
         {
+            SFXManager.instance.Play(SFXType.Sliding);
             ActivateBgScene4();
         }
         else if(i==4)   //scene 5
@@ -117,18 +131,40 @@ public class SceneManager : MonoBehaviour
         }
         else if (i==5)
         {
+            SFXManager.instance.Play(SFXType.Sliding);
             DeactivateScene5();
             HideHuman();
         }
         else if(i==6)
         {
-            print("he;llo");
+            Camera.main.GetComponent<ModelViewController>().enabled = false;
+            Camera.main.transform.position = new Vector3(0, 0, -5);
+            Camera.main.transform.rotation = Quaternion.identity;
+
+           
+            Scene7Main.SetActive(true);
+            SFXManager.instance.Play(SFXType.Sliding);
             activus.SetActive(false);
-            allScenes[i].GetComponent<Scene>().ChangeSceneIn(40);
+            Invoke("LoadRestartBtn", 37);
+            Invoke("ActivateLastParticleSystem", 0.5f);
+            //allScenes[i].GetComponent<Scene>().ChangeSceneIn(40);
         }
 
     }
 
+    public GameObject lastParticleSystem;
+
+    void ActivateLastParticleSystem()
+    {
+        lastParticleSystem.SetActive(true);
+    }
+
+    void LoadRestartBtn()
+    {
+        RestartBtn.SetActive(true);
+    }
+
+    public GameObject Scene7Main;
     public GameObject activus;
 
     void ActiveBgCanvas()
@@ -165,7 +201,7 @@ public class SceneManager : MonoBehaviour
     public void ActivateParticleSystem()
     {
         bubble.gameObject.SetActive(true);
-        allScenes[1].GetComponent<Scene>().ChangeSceneIn(3);
+        allScenes[1].GetComponent<Scene>().ChangeSceneIn(1);
     }
 
     void DeActivateParticleSystem()
@@ -179,7 +215,7 @@ public class SceneManager : MonoBehaviour
 
         var emission = bubble.emission;
         ParticleSystem.MinMaxCurve rate = emission.rateOverTime;
-        rate.constant *= 3f;
+        rate.constant *= 2.25f;
         emission.rateOverTime = rate;
 
         var main = bubble.main;
@@ -222,20 +258,28 @@ public class SceneManager : MonoBehaviour
     public GameObject btn;
     public ParticleSystem explosion;
 
+    public GameObject Elements_360;
     public void PlayRedClothAnim()
     {
         //redCloth.GetComponent<Animation>().Play("Red_Cloth_Anim");
         redCloth.GetComponent<Animation>().Play("RedCloth2");
         clothEvent.enabled = false;
         //activus_img.transform.GetComponent<Animation>().Play("Activus");
+        SFXManager.instance.Play(SFXType.BoxAppear);
         Invoke("HideRedCloth", 0.5f);
         text1.gameObject.SetActive(false);
         text2.gameObject.SetActive(false);
+        Invoke("Enable360Elements", 0.5f);
         activus.SetActive(true);
         Camera.main.GetComponent<ModelViewController>().enabled = true;
 
         explosion.gameObject.SetActive(true);
         explosion.Play();
+    }
+
+    void Enable360Elements()
+    {
+        Elements_360.SetActive(true);
     }
 
     public TextMeshProUGUI tap;
@@ -278,11 +322,11 @@ public class SceneManager : MonoBehaviour
         BlueCircle.SetActive(true);
     }
 
-    void DeActivateSecondScene()
+    public void DeActivateSecondScene()
     {
         //HumanBody.SetActive(false);
-        Glass.SetActive(false);
-        BlueCircle.SetActive(false);
+        
+        //BlueCircle.SetActive(false);
     }
 
 

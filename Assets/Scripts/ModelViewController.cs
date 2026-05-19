@@ -475,6 +475,7 @@ public class ModelViewController : MonoBehaviour
 
         if (_mouseOrbitActive && mouse.leftButton.isPressed)
         {
+            Vibration.instance.Vibrate(20);
             Vector2 delta = mousePos - _prevMousePos;
 
             float dYaw = delta.x * FinalOrbitSens;
@@ -507,6 +508,7 @@ public class ModelViewController : MonoBehaviour
 
             if (_mousePanActive && mouse.middleButton.isPressed)
             {
+                Vibration.instance.Vibrate(20);
                 Vector2 delta = mousePos - _prevMousePos;
 
                 _targetPivot -=
@@ -525,6 +527,7 @@ public class ModelViewController : MonoBehaviour
         float scroll = mouse.scroll.ReadValue().y;
         if (Mathf.Abs(scroll) > 0.001f)
         {
+            Vibration.instance.Vibrate(20);
             float oldDist = _targetDist;
             float newDist = oldDist - scroll * FinalZoomSens * 0.01f * oldDist;
 
@@ -751,6 +754,12 @@ public class ModelViewController : MonoBehaviour
         {
             _userHasInteracted = true;
             autoRotate = false;   // permanently stop auto-rotate on first interaction
+
+            Elements_360.SetActive(false);
         }
+
+
     }
+
+    public GameObject Elements_360;
 }
